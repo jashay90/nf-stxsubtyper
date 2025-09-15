@@ -1,0 +1,8 @@
+name: pylatex 
+channels:
+  - conda-forge
+dependencies:
+  - pandas=2.3.2
+  - pip=25.2
+  - pip:
+    - pylatex==1.4.2

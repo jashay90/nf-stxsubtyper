@@ -122,8 +122,8 @@ def main():
             add_table(doc, headers, rows)
 
     # Generate PDF
-    doc.generate_pdf(args.output, clean_tex=False)
-
+    doc.generate_pdf(args.output) #, clean_tex=False)
+    # doc.generate_pdf(args.output, compiler="tectonic", command=["tectonic"], clean_tex=False)
 
 if __name__ == "__main__":
     main()

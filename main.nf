@@ -2,6 +2,7 @@
 
 process BLASTN {
 	tag "blastn ${query.simpleName} against stx${gene}${subunit}"
+	label "multithread"
 	input:
 	tuple path(query), val(gene), val(subunit)
 	
@@ -92,16 +93,72 @@ process CHECKMOTIF {
 
 process STXTYPER {
 	tag "running stxtyper on ${query.simpleName}"
+	label "multithread"
 	input:
 	path query
 
 	output:
-	path "${query.simpleName}_stxtyper.tsv"
+	tuple val(query.simpleName), path("${query.simpleName}_stxtyper.tsv")
 
 	script:
 	"""
 	stxtyper -n $query --name ${query.simpleName} -o ${query.simpleName}_stxtyper.tsv --threads ${task.cpus}
 	"""
+}
+
+process KMA {
+	tag "running KMA on ${pair_id}"
+	label "multithread"
+	input:
+	tuple val(pair_id), path(reads)
+
+	output:
+	tuple val(pair_id), path("${pair_id}.res")
+
+	script:
+	"""
+	kma -ID 90 -mem_mode -ef -ipe ${reads[0]} ${reads[1]} -t_db ${projectDir}/${params.kmadb} -o ${pair_id}
+	"""
+}
+
+process REPORT {
+        tag "generating summary report for ${id}"
+        input:
+        tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif)
+
+        output:
+        tuple val(id), path("${id}_report.pdf")
+
+        script:
+        """
+        args=(--output "${id}_report")
+        # kma
+        if [ -n "$kma" ]; then
+                args+=(--blast "$kma")
+        fi
+
+        # stxtyper
+        if [ -n "$stxtyper" ]; then
+                args+=(--stxtype "$stxtyper")
+        fi
+        # closestleaf: may be multiple files -> include all after --closestleaf
+        if [ -n "$closestleaf" ]; then
+                args+=(--closestleaf)
+                for f in $closestleaf; do
+                        args+=( "\$f" )
+                done
+        fi
+
+        # motif: may be multiple files -> include all after --motif
+        if [ -n "$motif" ]; then
+                args+=(--motif)
+                for f in $motif; do
+                        args+=( "\$f" )
+                done
+        fi
+
+        latexreport.py "\${args[@]}"
+        """
 }
 
 workflow {
@@ -121,7 +178,6 @@ workflow {
 	// run summary script for stx1 and stx2
 	PARSEBLASTN(blastn_ch)
 	prot_ch = PARSEBLASTN.out.protfasta.splitFasta(record: ['id': true, 'desc': true, 'seqString': true])
-	prot_ch.view()
 	// for each protein sequence, align it against reference sequences
 	ALIGN(prot_ch)
 	// make a tree, identify closest leaf
@@ -131,4 +187,24 @@ workflow {
 
 	// NCBI's stxtyper
 	STXTYPER(genome_ch)
+	
+	// Read-based detection with kma
+	read_ch = Channel.fromFilePairs('data/input/*_R{1,2}.fastq.gz', checkIfExists: true)
+	KMA(read_ch)
+
+	// generate a summary report
+	// group results from custom pipeline
+	custom_grouped = CLOSESTLEAF.out.join(CHECKMOTIF.out, by: [0, 1, 2, 3], remainder: true).groupTuple(by: 0).map { tup ->
+		tup[5] = tup[5].findAll { it != null }
+		tup
+	}
+	// combine everything
+	everything = KMA.out.join(STXTYPER.out, by: 0, remainder: true).join(custom_grouped, by: 0, remainder: true).map { tup ->
+                // if missing elements because there were no pipeline hits, add empty elements
+                def expected = 8
+                def padded = tup.size < expected ? tup + Collections.nCopies(expected - tup.size(), null) : tup
+                // replace nulls with empty lists (makes nextflow happy)
+                padded.collect { it == null ? [] : it }
+        }
+	REPORT(everything)
 }
