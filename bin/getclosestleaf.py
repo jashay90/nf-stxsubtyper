@@ -16,7 +16,7 @@ def get_closest_leaf(tree, leafoi):
             mindist = distance
             closestleaf = leaf
 
-    return closestleaf.name, mindist
+    return closestleaf.name, round(mindist, 6)
 
 
 def loadtree(treefile, leafname):

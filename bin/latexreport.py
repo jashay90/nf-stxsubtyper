@@ -11,38 +11,53 @@ from pylatex.utils import NoEscape
 
 
 def parse_closestleaf(files):
-    results = {}
+    results = {"Allele": [], "Distance": []}
     for f in files:
-        file_id = os.path.splitext(os.path.basename(f))[0]
+        line = ""
         try:
             with open(f) as infile:
                 line = infile.readline().strip()
-                # Expect format like: "('stx2a_1_1', 0.0)"
-                match = re.match(r"\('([^']+)',\s*([\d.]+)\)", line)
-                if match:
-                    allele, dist = match.groups()
-                    results[file_id] = {"Allele": allele, "Distance": dist}
-                else:
-                    results[file_id] = {"Allele": "N/A", "Distance": "N/A"}
-        except Exception as e:
-            results[file_id] = {"Allele": f"Error: {e}", "Distance": "N/A"}
+        except:
+            continue
+        if line:
+            # Expect format like: "('stx2a_1_1', 0.0)"
+            match = re.match(r"\('([^']+)',\s*([\d.]+)\)", line)
+            if match:
+                allele, dist = match.groups()
+                results["Allele"].append(allele)
+                results["Distance"].append(dist)
+            else:
+                results["Allele"].append("")
+                results["Distance"].append("")
+        else:
+            results["Allele"].append("File error")
+            results["Distance"].append("File error")
+    
     return results
 
 
-def parse_motif(files):
-    results = {}
-    for f in files:
-        file_id = os.path.splitext(os.path.basename(f))[0]
-        try:
-            with open(f) as infile:
-                last_line = infile.readlines()[-1].strip()
+def parse_motif(files, stxes):
+    results = []
+    twocount = 0
+    for i in range(len(stxes)):
+        if stxes[i] == "2":
+            last_line = ""
+            try:
+                with open(files[twocount]) as infile:
+                    last_line = infile.readlines()[-1].strip()
+            except:
+                continue
+            if last_line:
                 match = re.search(r"subtype \['([a-z])'\]", last_line)
                 if match:
-                    results[file_id] = match.group(1)
+                    results.append(match.group(1))
                 else:
-                    results[file_id] = "N/A"
-        except Exception as e:
-            results[file_id] = f"Error: {e}"
+                    results.append("")
+            else:
+                results.append("File error")
+            twocount += 1
+        else:
+            results.append("N/A")
     return results
 
 
@@ -56,74 +71,65 @@ def add_table(doc, headers, rows):
         table.add_hline()
 
 
-def safe_read_tsv(filepath, required_cols):
-    """Read TSV and return only required columns, handling missing cols gracefully."""
-    try:
-        df = pd.read_csv(filepath, sep="\t")
-        missing = [c for c in required_cols if c not in df.columns]
-        if missing:
-            # fill with 'N/A' if column missing
-            for col in missing:
-                df[col] = "N/A"
-        return df[required_cols]
-    except Exception as e:
-        # Return dummy dataframe if file can't be read
-        return pd.DataFrame([{col: f"Error: {e}" for col in required_cols}])
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate PDF summary report with pylatex.")
-    parser.add_argument("--closestleaf", nargs="*", help="Closestleaf text files")
-    parser.add_argument("--motif", nargs="*", help="Motif text files")
-    parser.add_argument("--stxtype", help="stx_type tab-delimited file")
-    parser.add_argument("--blast", help="blast tab-delimited file")
-    parser.add_argument("--output", default="report", help="Output PDF filename (without extension)")
+    parser.add_argument("--id", type=str, required=True, help="seqID")
+    parser.add_argument("--stx", type=str, nargs="*", help="stx type")
+    parser.add_argument("--contig", type=str, nargs="*", help="contig name")
+    parser.add_argument("--loc", type=str, nargs="*", help="location on contig")
+    parser.add_argument("--closestleaf", type=str, nargs="*", help="Closestleaf text files")
+    parser.add_argument("--motif", type=str, nargs="*", help="Motif text files")
+    parser.add_argument("--stxtyper", type=str, help="stx_type tab-delimited file")
+    parser.add_argument("--kma", type=str, help="kma tab-delimited file")
+    parser.add_argument("--output", type=str, default="report", help="Output PDF filename (without extension)")
     args = parser.parse_args()
 
     doc = Document()
-    doc.preamble.append(Command("title", "Summary Report"))
-    doc.preamble.append(Command("author", "Automated Pipeline"))
+    doc.preamble.append(Command("title", "Stx Analysis for " + args.id))
     doc.preamble.append(Command("date", NoEscape(r"\today")))
     doc.append(NoEscape(r"\maketitle"))
 
     # Section 1: Closestleaf + Motif
     if args.closestleaf or args.motif:
-        with doc.create(Section("Closestleaf & Motif Results")):
+        with doc.create(Section("Stx-subtyper Results")):
             closest_data = parse_closestleaf(args.closestleaf) if args.closestleaf else {}
-            motif_data = parse_motif(args.motif) if args.motif else {}
-
+            motif_data = parse_motif(args.motif, args.stx) if args.motif else {}
+            headers = ["Gene", "Allele", "Distance", "Motif", "Contig", "Location"]
+            df = pd.DataFrame([args.stx, closest_data["Allele"], closest_data["Distance"], motif_data, args.contig, args.loc])
             # Collect union of all file IDs
-            all_ids = sorted(set(closest_data.keys()) | set(motif_data.keys()))
-
-            rows = []
-            for fid in all_ids:
-                allele = closest_data.get(fid, {}).get("Allele", "N/A")
-                dist = closest_data.get(fid, {}).get("Distance", "N/A")
-                motif_val = motif_data.get(fid, "N/A")
-                rows.append([fid, allele, dist, motif_val])
-
-            headers = ["File ID", "Allele", "Distance", "Motif"]
+            rows = df.T.values.tolist()
+            print(rows)
             add_table(doc, headers, rows)
 
     # Section 2: stx_type file
-    if args.stxtype:
-        with doc.create(Section("stx_type Results")):
-            headers = ["stx_type", "operon", "identity"]
-            df = safe_read_tsv(args.stxtype, headers)
-            rows = df.values.tolist()
-            add_table(doc, headers, rows)
+    if args.stxtyper:
+        with doc.create(Section("Stxtyper Results")):
+            cols = ["stx_type", "identity", "operon", "target_contig", "target_start", "target_stop"]
+            try:
+                df = pd.read_csv(args.stxtyper, sep="\t", usecols=cols, dtype=str)[cols]
+                df["Location"] = df["target_start"] + "-" + df["target_stop"]
+                df = df.drop(columns=["target_start", "target_stop"])
+                headers = ["Stx Type", "Identity", "Operon", "Contig", "Location"]
+                rows = df.values.tolist()
+                add_table(doc, headers, rows)
+            except:
+                doc.append("There was a problem reading the stxtyper file.")
 
-    # Section 3: blast file
-    if args.blast:
-        with doc.create(Section("Blast Results")):
-            headers = ["Template", "Template_Identity", "Template_Coverage"]
-            df = safe_read_tsv(args.blast, headers)
-            rows = df.values.tolist()
-            add_table(doc, headers, rows)
+    # Section 3: KMA file
+    if args.kma:
+        with doc.create(Section("KMA Results")):
+            try:
+                cols = ["#Template", "Query_Identity", "Depth"]
+                df = pd.read_csv(args.kma, sep="\t", usecols=cols, dtype=str)[cols]
+                df["#Template"] = df["#Template"].str.replace(r"\|.*", "", regex=True)
+                headers = ["Allele", "Identity", "Depth"]
+                rows = df.values.tolist()
+                add_table(doc, headers, rows)
+            except:
+                doc.append("There was a problem reading the kma output file.")
 
     # Generate PDF
     doc.generate_pdf(args.output) #, clean_tex=False)
-    # doc.generate_pdf(args.output, compiler="tectonic", command=["tectonic"], clean_tex=False)
 
 if __name__ == "__main__":
     main()
