@@ -173,7 +173,7 @@ process REPORT {
 
 
 params.genomes = null
-params.reads = "data/input/*_R{1,2}.fastq.gz"
+params.reads = null
 params.outdir = "results"
 
 workflow {

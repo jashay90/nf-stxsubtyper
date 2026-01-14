@@ -57,14 +57,14 @@ def parseb(arow, wholeb):
         else:
             # A should follow B
             bmatch = subb[(subb['qend'] < arow["qstart"]) & (subb['qend'] >= (arow["qstart"] - args.cutoff))]
-    if not bmatch.empty:
-        # changing the column names so they don't conflict with each other
-        bmatch.columns = [col + "_B" for col in bmatch.columns]
-        acopy = arow.copy(deep=True)
-        acopy.index = [str(idx) + "_A" for idx in acopy.index]
-        # merging the result
-        bmatch[acopy.index] = acopy.values
-        return bmatch
+        if not bmatch.empty:
+            # changing the column names so they don't conflict with each other
+            bmatch.columns = [col + "_B" for col in bmatch.columns]
+            acopy = arow.copy(deep=True)
+            acopy.index = [str(idx) + "_A" for idx in acopy.index]
+            # merging the result
+            bmatch[acopy.index] = acopy.values
+            return bmatch
 
 
 # For a matching subunit pair, checks whether they are perfect matches to the A and B subunits of the same allele
@@ -107,7 +107,7 @@ def concatenateseqs(combinedrow):
         combinedseq = Seq(combinedrow['qseq_B'] + connecter + combinedrow['qseq_A']).reverse_complement()
         description = "-".join((str(combinedrow['qstart_B']), str(combinedrow['qend_A'])))
     
-    return SeqRecord(combinedseq, id=combinedrow['qacc_A'], description=description)
+    return SeqRecord(combinedseq.replace("-", ""), id=combinedrow['qacc_A'], description=description)
 
 
 
