@@ -172,6 +172,68 @@ process REPORT {
 }
 
 
+// Replaces REPORT: produces a single-row TSV for this sample
+process MAKETSV {
+    label "pandas"
+    tag "making summary row for ${id}"
+
+    input:
+    tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif)
+
+    output:
+    path "${id}_row.tsv"
+
+    script:
+    """
+    args=(--id "${id}" --output "${id}_row.tsv")
+
+    if [ -n "$kma" ]; then
+        args+=(--kma "$kma")
+    fi
+
+    if [ -n "$stxtyper" ]; then
+        args+=(--stxtyper "$stxtyper")
+    fi
+
+    for v in closestleaf motif stx contig loc; do
+        case \$v in
+            closestleaf) value="$closestleaf" ;;
+            motif)       value="$motif"       ;;
+            stx)         value="$stx"         ;;
+            contig)      value="$contig"      ;;
+            loc)         value="$loc"         ;;
+        esac
+        if [ -n "\$value" ]; then
+            args+=(--\$v)
+            for f in \$value; do
+                clean=\$(echo "\$f" | sed 's/^\\[//; s/\\]\$//; s/,\$//')
+                args+=( "\$clean" )
+            done
+        fi
+    done
+
+    xlsxreport.py "\${args[@]}"
+    """
+}
+
+// Runs once after all samples are done; assembles the Excel file
+process COMBINE_XLSX {
+    label "pandas"
+    tag "combining all samples into Excel report"
+    publishDir "${params.outdir}/report", mode: 'copy'
+
+    input:
+    path tsvs  // all per-sample TSV files collected into one list
+
+    output:
+    path "summary_report.xlsx"
+
+    script:
+    """
+    combine_xlsx.py ${tsvs} --output summary_report.xlsx
+    """
+}
+
 params.genomes = null
 params.reads = null
 params.outdir = "results"
@@ -232,5 +294,8 @@ workflow {
                 padded.collect { it == null ? [] : it }
         }
 	// generate a summary report
-	REPORT(everything)
+	// REPORT(everything)
+	// instead of a summary report, make an Excel file
+	MAKETSV(everything)
+	COMBINE_XLSX(MAKETSV.out.collect())
 }

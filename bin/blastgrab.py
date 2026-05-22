@@ -110,7 +110,6 @@ def concatenateseqs(combinedrow):
     return SeqRecord(combinedseq.replace("-", ""), id=combinedrow['qacc_A'], description=description)
 
 
-
 adf = pd.read_csv(args.a, sep="\t")
 bdf = pd.read_csv(args.b, sep="\t")
 
