@@ -71,11 +71,17 @@ def main():
     parser.add_argument("--motif",       nargs="*", default=[])
     parser.add_argument("--stxtyper",    default=None)
     parser.add_argument("--kma",         default=None)
+    parser.add_argument("--samplename",  default=None)
+    parser.add_argument("--coverage",    default=None)
     parser.add_argument("--output",      default="-",
                         help="Output TSV path, or '-' for stdout")
     args = parser.parse_args()
 
     row = {"Sequence ID": args.id}
+
+    # sample name
+    if args.samplename:
+        row["Sample Name"]: args.samplename.replace('[', '').replace(']', '')
 
     # custom pipeline
     clean_stx = [s for s in (args.stx or []) if s not in ("[]", "null", "")]
@@ -110,7 +116,8 @@ def main():
                 row[col] = f"parse error: {e}"
     else:
         for col in ("NCBI-Stx Type","NCBI-Identity","NCBI-Operon",
-                    "NCBI-Contig","NCBI-Location"): 
+                    "NCBI-Contig","NCBI-Location", "HC-Protein Allele",
+                    "HC-Distance", "HC-Motif", "HC-Contig", "HC-Location"): 
             row[col] = "not_performed"
 
     # kma
@@ -127,8 +134,13 @@ def main():
     else:
         row["KMA-Nucleotide Allele"] = row["KMA-Identity"] = row["KMA-Depth"] = "not_performed"
 
+    # depth of coverage
+    if args.coverage:
+        row["Assembly-Mean Coverage"] = args.coverage.replace('[', '').replace(']', '')
+
     # write row
-    out_df = pd.DataFrame([row])
+    # Why doesn't fillna do anything?
+    out_df = pd.DataFrame([row]).replace("", "no_result")
     if args.output == "-":
         out_df.to_csv(sys.stdout, sep="\t", index=False)
     else:

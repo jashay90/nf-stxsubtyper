@@ -130,7 +130,7 @@ process REPORT {
         tag "generating summary report for ${id}"
 	publishDir "${params.outdir}/report", pattern: "*.pdf"
         input:
-        tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif)
+        tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif), val(samplename), val(coverage) 
 
         output:
         tuple val(id), path("${id}_report.pdf")
@@ -148,7 +148,7 @@ process REPORT {
                 args+=(--stxtyper "$stxtyper")
         fi
 
-	# custome pipeline
+	# custom pipeline
         for v in closestleaf motif stx contig loc; do
                 case \$v in
                         closestleaf) value="$closestleaf" ;;
@@ -178,7 +178,7 @@ process MAKETSV {
     tag "making summary row for ${id}"
 
     input:
-    tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif)
+    tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif), val(samplename), val(coverage) 
 
     output:
     path "${id}_row.tsv"
@@ -187,13 +187,17 @@ process MAKETSV {
     """
     args=(--id "${id}" --output "${id}_row.tsv")
 
-    if [ -n "$kma" ]; then
-        args+=(--kma "$kma")
-    fi
-
-    if [ -n "$stxtyper" ]; then
-        args+=(--stxtyper "$stxtyper")
-    fi
+    for v in kma stxtyper samplename coverage; do
+        case \$v in
+            kma)        value="$kma"        ;;
+            stxtyper)   value="$stxtyper"   ;;
+            samplename) value="$samplename" ;;
+            coverage)   value="$coverage"   ;;
+        esac
+        if [ -n "\$value" ]; then
+            args+=(--\$v \$value)
+        fi
+    done
 
     for v in closestleaf motif stx contig loc; do
         case \$v in
@@ -237,6 +241,9 @@ process COMBINE_XLSX {
 params.genomes = null
 params.reads = null
 params.outdir = "results"
+params.makepdfs = false
+params.samplenames = null
+params.coverage = null
 
 workflow {
 	if (params.genomes != null) {
@@ -285,17 +292,42 @@ workflow {
 		kma = Channel.empty()
 	}
 
+	// optional metadata added from command line
+	if (params.samplenames != null) {
+		snames = Channel.of(params.samplenames.split(';')).map { row ->
+		def cols = row.split(',')
+		tuple(cols[0], cols[1])
+		}
+	} else {
+		snames = Channel.empty()
+	}
+        if (params.coverage != null) {
+                cov = Channel.of(params.coverage.split(';')).map { row ->
+                        def cols = row.split(',')
+                        tuple(cols[0], cols[1])
+                }
+	} else {
+		cov = Channel.empty()
+	}
+
 	// combine everything
-	everything = kma.join(stxtyper, by: 0, remainder: true).join(custom_grouped, by: 0, remainder: true).map { tup ->
+	allresults = kma.join(stxtyper, by: 0, remainder: true).join(custom_grouped, by: 0, remainder: true).map { tup ->
                 // if missing elements because there were no pipeline hits, add empty elements
                 def expected = 8
                 def padded = tup.size < expected ? tup + Collections.nCopies(expected - tup.size(), null) : tup
                 // replace nulls with empty lists (makes nextflow happy)
                 padded.collect { it == null ? [] : it }
         }
-	// generate a summary report
-	// REPORT(everything)
-	// instead of a summary report, make an Excel file
+	everything = allresults.join(snames, by: 0, remainder: true).join(cov, by: 0, remainder: true).map { items ->
+        	def sname    = items[-2] != null ? items[-2] : "[]"
+        	def coverage = items[-1] != null ? items[-1] : "[]"
+        	tuple(*items[0..-3], sname, coverage)
+        }
+	// make a summary Excel file
 	MAKETSV(everything)
 	COMBINE_XLSX(MAKETSV.out.collect())
+	if (params.makepdfs) {
+		// generate a summary PDF report
+		REPORT(everything)
+	}
 }
