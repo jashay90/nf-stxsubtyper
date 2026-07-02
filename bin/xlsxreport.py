@@ -81,7 +81,7 @@ def main():
 
     # sample name
     if args.samplename:
-        row["Sample Name"]: args.samplename.replace('[', '').replace(']', '')
+        row["Sample Name"] = args.samplename.replace('[', '').replace(']', '')
 
     # custom pipeline
     clean_stx = [s for s in (args.stx or []) if s not in ("[]", "null", "")]
