@@ -7,13 +7,21 @@ process BLASTN {
 	tuple path(query), val(gene), val(subunit)
 	
 	output:
-	tuple val(query.simpleName), val(gene), val(subunit), path("${query.simpleName}_blastout_${gene}${subunit}.tsv")
-	
+	tuple val(query.simpleName), val(gene), val(subunit), path("${query.simpleName}_blastout_${gene}${subunit}.tsv"), emit: results
+	path("versions.yml"), emit: versions	
+
 	script:
 	"""
 	header="qacc sacc qstart qend sstart send qframe sframe slen length mismatch qseq"
 	echo \$header | sed 's/\s/\t/g' > "${query.simpleName}_blastout_${gene}${subunit}.tsv"
 	blastn -db ${projectDir}/${params.blastdbprefix}$gene$subunit${params.blastdbsuffix} -query $query -perc_identity ${params.perc_identity} -max_target_seqs ${params.max_target_seqs} -num_threads ${task.cpus} -outfmt "6 \${header}" >> "${query.simpleName}_blastout_${gene}${subunit}.tsv"
+	
+	cat <<-END_VERSIONS > versions.yml
+                "${task.process}":
+                blastn: \$(blastn -version 2>&1 | head -1 | sed 's/^blastn\:\s//')
+        END_VERSIONS
+
+
 	"""
 }
 
@@ -39,7 +47,8 @@ process ALIGN {
 	tuple val(id), val(stx), val(protseq)
 
 	output:
-	tuple val(id), val(stx), val(protseq.id), val(protseq.desc), path("${id}_Stx${stx}_${protseq.id}_${protseq.desc}_aligned.fasta")
+	tuple val(id), val(stx), val(protseq.id), val(protseq.desc), path("${id}_Stx${stx}_${protseq.id}_${protseq.desc}_aligned.fasta"), emit: results
+	path("versions.yml"), emit: versions
 
 	script:
 	"""
@@ -47,6 +56,11 @@ process ALIGN {
 	echo ${protseq.seqString} >> merged.fa
 	cat ${projectDir}/${params.refprefix}$stx${params.refsuffix} >> merged.fa
 	muscle -align merged.fa -output ${id}_Stx${stx}_${protseq.id}_${protseq.desc}_aligned.fasta
+
+	cat <<-END_VERSIONS > versions.yml
+        "${task.process}":
+                muscle: \$(muscle -version 2>&1 | sed 's/^MUSCLE\sv//; s/\s.*//')
+        END_VERSIONS
 	"""
 }
 
@@ -56,11 +70,17 @@ process MAKETREE {
 	tuple val(id), val(stx), val(contig), val(loc), path(alignment)
 
 	output:
-	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.simpleName}.tree")
+	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.simpleName}.tree"), emit: results
+	path("versions.yml"), emit: versions
 
 	script:
 	"""
 	FastTree ${alignment} > ${alignment.simpleName}.tree
+
+	cat <<-END_VERSIONS > versions.yml
+        "${task.process}":
+                fasttree: \$(FastTree -version 2>&1 | head -1 | sed 's/.*version\s//; s/\s.*//')
+        END_VERSIONS	
 	"""
 }
 
@@ -102,10 +122,16 @@ process STXTYPER {
 	path query
 
 	output:
-	tuple val(query.simpleName), path("${query.simpleName}_stxtyper.tsv")
+	tuple val(query.simpleName), path("${query.simpleName}_stxtyper.tsv"), emit: results
+	path("versions.yml"), emit: versions
 
 	script:
 	"""
+	cat <<-END_VERSIONS > versions.yml
+		"${task.process}":
+    		stxtyper: \$(stxtyper --version 2>&1)
+	END_VERSIONS
+
 	stxtyper -n $query --name ${query.simpleName} -o ${query.simpleName}_stxtyper.tsv --threads ${task.cpus}
 	"""
 }
@@ -118,10 +144,16 @@ process KMA {
 	tuple val(pair_id), path(reads)
 
 	output:
-	tuple val(pair_id), path("${pair_id}.res")
+	tuple val(pair_id), path("${pair_id}.res"), emit: results
+	path("versions.yml"), emit: versions
 
 	script:
 	"""
+	cat <<END_VERSIONS > versions.yml
+	"${task.process}":
+    	kma: \$(kma -v 2>&1 | sed 's/^KMA-//')
+	END_VERSIONS
+
 	kma -ID 90 -mem_mode -ef -ipe ${reads[0]} ${reads[1]} -t_db ${projectDir}/${params.kmadb} -o ${pair_id}
 	"""
 }
@@ -220,6 +252,20 @@ process MAKETSV {
     """
 }
 
+process PIPELINEVERSION {
+	tag "grabbing pipeline version"
+	output:
+	path("versions.yml"), emit: versions
+
+	script:
+	"""
+        cat <<END_VERSIONS > versions.yml
+        "${task.process}":
+        nf-stxsubtyper: \$(git log | head -1 | sed 's/^commit\s//')
+        END_VERSIONS
+	"""
+}
+
 // Runs once after all samples are done; assembles the Excel file
 process COMBINE_XLSX {
     label "pandas"
@@ -227,7 +273,7 @@ process COMBINE_XLSX {
     publishDir "${params.outdir}/report", mode: 'copy'
 
     input:
-    path tsvs  // all per-sample TSV files collected into one list
+    tuple path(tsvs), path(versions)
 
     output:
     path "summary_report.xlsx"
@@ -246,6 +292,8 @@ params.samplenames = null
 params.coverage = null
 
 workflow {
+	PIPELINEVERSION()
+	ch_versions = PIPELINEVERSION.out.versions
 	if (params.genomes != null) {
 		genome_ch = Channel.fromPath(params.genomes)
 
@@ -254,21 +302,24 @@ workflow {
 		subunit_ch = Channel.of('A', 'B')
 		// run blastn against databases of 1a, 1b, 2a, and 2b subunits
 		BLASTN(genome_ch.combine(gene_ch).combine(subunit_ch))
-		blastn_ch = BLASTN.out.groupTuple(by: [0,1], size: 2).map { id, gene, subunits, files ->
+		blastn_ch = BLASTN.out.results.groupTuple(by: [0,1], size: 2).map { id, gene, subunits, files ->
     			def pairs = [subunits, files].transpose()  // [["B", fileB], ["A", fileA]]
     			def submap = pairs.collectEntries { s, f -> [(s): f] }  // makes ["B": fileB, "A": fileA]
     			tuple(id, gene, submap['A'], submap['B'])
 		}
-	
+		ch_versions = ch_versions.mix(BLASTN.out.versions)
 		// run summary script for stx1 and stx2
 		PARSEBLASTN(blastn_ch)
 		prot_ch = PARSEBLASTN.out.protfasta.splitFasta(record: ['id': true, 'desc': true, 'seqString': true])
 		// for each protein sequence, align it against reference sequences
 		ALIGN(prot_ch)
+		ch_versions = ch_versions.mix(ALIGN.out.versions)
 		// make a tree, identify closest leaf
-		CLOSESTLEAF(MAKETREE(ALIGN.out))
+		MAKETREE(ALIGN.out.results)
+		ch_versions = ch_versions.mix(MAKETREE.out.versions)
+		CLOSESTLEAF(MAKETREE.out.results)
 		// for stx2, check the motif
-		CHECKMOTIF(ALIGN.out.filter {id, stx, contig, loc, alignment -> stx == '2'})
+		CHECKMOTIF(ALIGN.out.results.filter {id, stx, contig, loc, alignment -> stx == '2'})
 		// group results from custom pipeline
 		custom_grouped = CLOSESTLEAF.out.join(CHECKMOTIF.out, by: [0, 1, 2, 3], remainder: true).groupTuple(by: 0).map { tup ->
 			tup[5] = tup[5].findAll { it != null }
@@ -277,7 +328,8 @@ workflow {
 
 		// NCBI's stxtyper
 		STXTYPER(genome_ch)
-		stxtyper = STXTYPER.out
+		stxtyper = STXTYPER.out.results
+		ch_versions = ch_versions.mix(STXTYPER.out.versions)
 	} else {
 		stxtyper = Channel.empty()
 		custom_grouped = Channel.empty()
@@ -287,7 +339,8 @@ workflow {
 		// Read-based detection with kma
 		read_ch = Channel.fromFilePairs(params.reads)
 		KMA(read_ch)
-		kma = KMA.out
+		kma = KMA.out.results
+		ch_versions = ch_versions.mix(KMA.out.versions)
 	} else {
 		kma = Channel.empty()
 	}
@@ -323,9 +376,11 @@ workflow {
         	def coverage = items[-1] != null ? items[-1] : "[]"
         	tuple(*items[0..-3], sname, coverage)
         }
+
 	// make a summary Excel file
 	MAKETSV(everything)
-	COMBINE_XLSX(MAKETSV.out.collect())
+	ch_versions.collectFile(name: 'collated_versions.yml').set { ch_collated_versions }
+	COMBINE_XLSX(MAKETSV.out.collect().join(ch_collated_versions))
 	if (params.makepdfs) {
 		// generate a summary PDF report
 		REPORT(everything)
