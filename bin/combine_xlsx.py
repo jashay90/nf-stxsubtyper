@@ -8,8 +8,9 @@ import json
 def parse_parameters(params_path):
     with open(params_path) as f:
         params_dict = json.load(f)
+    manifest = params_dict.pop("manifest", {})
     df = pd.DataFrame.from_dict(params_dict, orient='index', columns=["value"])
-    return df
+    return df, manifest.get("homePage", ""), manifest.get("version", "")
 
 def parse_versions(versions_path):
     """
@@ -23,10 +24,10 @@ def parse_versions(versions_path):
     return versions_dict
 
 
-def infotab(toolversions):
+def infotab(toolversions, plink, pversion):
     stxtyperv = toolversions.pop("STXTYPER", ['','no_version'])[1]
     kmav = toolversions.pop("KMA", ['', 'no_version'])[1]
-    rows = ["This Nextflow analysis pipeline (https://github.com/jashay90/nf-stxsubtyper) and database (https://github.com/OLC-Bioinformatics/STxDB) identifies and characterizes stx1/stx2 from assembly or read data, and outputs a results summary that includes:",
+    rows = [f"This Nextflow analysis pipeline ({plink}, {pversion}) and database (https://github.com/OLC-Bioinformatics/STxDB) identifies and characterizes stx1/stx2 from assembly or read data, and outputs a results summary that includes:",
             "1. HC-Stx, which identifies full-length stx hits to an stxDB using assembled genomes. HC-Stx used the following external tools for its analysis:"]
     for key in toolversions:
         rows.append(f"\t{toolversions[key][0]} {toolversions[key][1]}")
@@ -70,8 +71,14 @@ def main():
     else:
         vdict = {}
 
+    if args.params:
+        paramdf, plink, pversion = parse_parameters(args.params)
+    else:
+        plink = ""
+        pversion = ""
+
     with pd.ExcelWriter(args.output, engine="openpyxl") as writer:
-        infotab(vdict).to_excel(writer, index=False, sheet_name="Info")
+        infotab(vdict, plink, pversion).to_excel(writer, index=False, sheet_name="Info")
         wsi = writer.sheets["Info"]
         makepretty(wsi)
 
@@ -81,7 +88,7 @@ def main():
         makepretty(wss)
 
         if args.params:
-            parse_parameters(args.params).to_excel(writer, index=True, sheet_name="Parameters")
+            paramdf.to_excel(writer, index=True, sheet_name="Parameters")
             wsp = writer.sheets["Parameters"]
             makepretty(wsp)
 

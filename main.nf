@@ -226,6 +226,23 @@ process MAKETSV {
     """
 }
 
+process WRITE_JSONS {
+	input:
+	val versions
+
+	output:
+	path vjson, emit: vjson
+	path pjson, emit: pjson
+
+	exec:
+	vjson = task.workDir.resolve('versions.json')
+	pjson = task.workDir.resolve('params.json')
+	jsonVersions = new groovy.json.JsonBuilder(versions).toPrettyString()
+	file(vjson).text = jsonVersions
+	jsonParams = new groovy.json.JsonBuilder(params).toPrettyString()
+	file(pjson).text = jsonParams
+}	
+	
 
 // Runs once after all samples are done; assembles the Excel file
 process COMBINE_XLSX {
@@ -235,20 +252,15 @@ process COMBINE_XLSX {
 
     input:
     path(tsvs)
-    val(versions)
+    path(vjson)
+    path(pjson)
 
     output:
     path "summary_report.xlsx"
 
     script:
-    jsonVersions = new groovy.json.JsonBuilder(versions).toPrettyString()
-    vfile = file("{params.outdir}/versions.json")
-    vfile.text = jsonVersions
-    jsonParams = new groovy.json.JsonBuilder(params).toPrettyString()
-    pfile = file("{params.outdir}/params.json")
-    pfile.text = jsonParams
     """
-    combine_xlsx.py ${tsvs} --params ${pfile} --versions ${vfile} --output summary_report.xlsx
+    combine_xlsx.py ${tsvs} --params ${pjson} --versions ${vjson} --output summary_report.xlsx
     """
 }
 
@@ -338,10 +350,13 @@ workflow {
         	tuple(*items[0..-3], sname, coverage)
         }
 
+	// make json metadata files
+	ch_versions = Channel.topic('versions').unique()
+	WRITE_JSONS(ch_versions.collect(flat: false))
+
 	// make a summary Excel file
 	MAKETSV(everything)
-	ch_versions = Channel.topic('versions').unique()
-	COMBINE_XLSX(MAKETSV.out.collect(), ch_versions.collect(flat: false))
+	COMBINE_XLSX(MAKETSV.out.collect(), WRITE_JSONS.out.vjson, WRITE_JSONS.out.pjson)
 	if (params.makepdfs) {
 		// generate a summary PDF report
 		REPORT(allresults)

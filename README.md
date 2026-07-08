@@ -21,8 +21,10 @@ You may also run the pipeline from a different directory, in which case you woul
 A number of parameters may be set either by changing the main.config file or by adding flags with two dashes to the command above.
 ### Parameters most likely to change
 	genomes : assembly fasta files as input
-	reads : read fastq files as input. If using, this should be formatted with quotes and a specific glob pattern for matching pairs, e.g. "path/to/*_{1,2}.fastq.gz"
+	reads : paired read fastq files as input. If using, this should be formatted with quotes and a specific glob pattern for matching pairs, e.g. "path/to/*_{1,2}.fastq.gz"
 	outdir: output directory
+Note that in order to match reads with their associated assemblies, this pipeline is expecting reads filenames to have a prefix which matches the filename of the assembly, e.g. "name.fasta" matches with "name_{1,2}.fastq.gz"
+
 ### Database parameters
 	blastdbprefix : the path and shared prefix to blast database files (e.g.. if your files are called nt_stx_1a_alleles.*, nt_stx_1b_alleles.*, nt_stx_2a_alleles.*, nt_stx_2b_alleles.*, then this parameter should be "stx_")
 	blastdbsuffix : the shared suffix to blast database files (e.g.. if your files are called nt_stx_1a_alleles.*, nt_stx_1b_alleles.*, nt_stx_2a_alleles.*, nt_stx_2b_alleles.*, then this parameter should be "_alleles")
