@@ -140,7 +140,7 @@ def main():
 
     # write row
     # Why doesn't fillna do anything?
-    out_df = pd.DataFrame([row]).replace("", "no_result")
+    out_df = pd.DataFrame([row]) #.replace("", "no_result")
     if args.output == "-":
         out_df.to_csv(sys.stdout, sep="\t", index=False)
     else:
