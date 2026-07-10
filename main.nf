@@ -15,7 +15,7 @@ process BLASTN {
 	"""
 	header="qacc sacc qstart qend sstart send qframe sframe slen length mismatch qseq"
 	echo \$header | sed 's/\s/\t/g' > "${query.simpleName}_blastout_${gene}${subunit}.tsv"
-	blastn -db ${projectDir}/${params.blastdbprefix}$gene$subunit${params.blastdbsuffix} -query $query -perc_identity ${params.perc_identity} -max_target_seqs ${params.max_target_seqs} -num_threads ${task.cpus} -outfmt "6 \${header}" >> "${query.simpleName}_blastout_${gene}${subunit}.tsv"
+	blastn -db ${params.basedir}/${params.blastdbprefix}$gene$subunit${params.blastdbsuffix} -query $query -perc_identity ${params.perc_identity} -max_target_seqs ${params.max_target_seqs} -num_threads ${task.cpus} -outfmt "6 \${header}" >> "${query.simpleName}_blastout_${gene}${subunit}.tsv"
 	"""
 }
 
@@ -27,6 +27,7 @@ process PARSEBLASTN {
 
 	output:
 	path "${id}_stx${stx}_filtered_A.tsv", emit: filtered // just confirming this exists
+	path "${id}_stx${stx}_properpairs.tsv", optional: true, emit: properpairs
 	tuple val(id), val(stx), path("${id}_stx${stx}_prot.fasta"), optional: true, emit: protfasta
 
 	script:
@@ -48,7 +49,7 @@ process ALIGN {
 	"""
 	echo ">${params.qname}" > merged.fa
 	echo ${protseq.seqString} >> merged.fa
-	cat ${projectDir}/${params.refprefix}$stx${params.refsuffix} >> merged.fa
+	cat ${params.basedir}/${params.refprefix}$stx${params.refsuffix} >> merged.fa
 	muscle -align merged.fa -output ${id}_Stx${stx}_${protseq.id}_${protseq.desc}_aligned.fasta
 	"""
 }
@@ -128,7 +129,7 @@ process KMA {
 
 	script:
 	"""
-	kma ${params.kmaopts} -ipe ${reads[0]} ${reads[1]} -t_db ${projectDir}/${params.kmadb} -o ${pair_id}
+	kma ${params.kmaopts} -ipe ${reads[0]} ${reads[1]} -t_db ${params.basedir}/${params.kmadb} -o ${pair_id}
 	"""
 }
 
