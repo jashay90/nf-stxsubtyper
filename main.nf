@@ -38,6 +38,7 @@ process PARSEBLASTN {
 
 process ALIGN {
 	tag "aligning ${id} Stx${stx} to reference sequences"
+	publishDir "${params.outdir}/alignments", pattern: "*_aligned.fasta"
 	input:
 	tuple val(id), val(stx), val(protseq)
 
@@ -56,31 +57,31 @@ process ALIGN {
 
 process MAKETREE {
 	tag "building tree for ${id} Stx${stx} encoded at ${contig} ${loc}"
+	publishDir "${params.outdir}/trees", pattern: "*.tree"
 	input:
 	tuple val(id), val(stx), val(contig), val(loc), path(alignment)
 
 	output:
-	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.simpleName}.tree"), emit: results
+	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.baseName}.tree"), emit: results
 	tuple val("${task.process}"), val('fasttree'), eval('fasttree -help 2>&1 | head -1 | sed \'s/^FastTree \\([0-9.]*\\) .*$/\\1/\''), topic: versions
 
 	script:
 	"""
-	FastTree ${alignment} > ${alignment.simpleName}.tree
+	FastTree ${alignment} > ${alignment.baseName}.tree
 	"""
 }
 
 process CLOSESTLEAF {
 	tag "identifying closest leaf for ${id} Stx${stx} encoded at ${contig} ${loc}"
-	publishDir "${params.outdir}/trees", pattern: "*_closestleaf.txt"
 	input:
 	tuple val(id), val(stx), val(contig), val(loc), path(tree)
 
 	output:
-	tuple val(id), val(stx), val(contig), val(loc), path("${tree.simpleName}_closestleaf.txt")
+	tuple val(id), val(stx), val(contig), val(loc), path("${tree.baseName}_closestleaf.txt")
 
 	script:
 	"""
-	getclosestleaf.py -t ${tree} -l ${params.qname} > ${tree.simpleName}_closestleaf.txt
+	getclosestleaf.py -t ${tree} -l ${params.qname} > ${tree.baseName}_closestleaf.txt
 	"""
 }
 
@@ -91,16 +92,16 @@ process CHECKMOTIF {
 	tuple val(id), val(stx), val(contig), val(loc), path(alignment)
 
 	output:
-	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.simpleName}_motif.txt")
+	tuple val(id), val(stx), val(contig), val(loc), path("${alignment.baseName}_motif.txt")
 
 	script:
 	"""
-	identifymotif.py -i ${alignment} -s ${params.qname} -k ${params.knownseq} > ${alignment.simpleName}_motif.txt
+	identifymotif.py -i ${alignment} -s ${params.qname} -k ${params.knownseq} > ${alignment.baseName}_motif.txt
 	"""	
 }
 
 process STXTYPER {
-	tag "running stxtyper on ${query.simpleName}"
+	tag "running stxtyper on ${query.baseName}"
 	label "multithread"
 	publishDir "${params.outdir}/stxtyper", pattern: "*_stxtyper.tsv"
 	input:
