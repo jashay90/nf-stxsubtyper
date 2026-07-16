@@ -21,7 +21,7 @@ process BLASTN {
 
 process PARSEBLASTN {
 	tag "parsing blastn output for ${id} stx${stx}"
-	publishDir "${params.outdir}/blast_processed", pattern: "*properpairs.tsv"
+	publishDir "${params.outdir}/blast_processed", pattern: "*properpairs.tsv", mode: 'copy'
 	input:
 	tuple val(id), val(stx), path(ablast), path(bblast)
 
@@ -38,7 +38,7 @@ process PARSEBLASTN {
 
 process ALIGN {
 	tag "aligning ${id} Stx${stx} to reference sequences"
-	publishDir "${params.outdir}/alignments", pattern: "*_aligned.fasta"
+	publishDir "${params.outdir}/alignments", pattern: "*_aligned.fasta", mode: 'copy'
 	input:
 	tuple val(id), val(stx), val(protseq)
 
@@ -57,7 +57,7 @@ process ALIGN {
 
 process MAKETREE {
 	tag "building tree for ${id} Stx${stx} encoded at ${contig} ${loc}"
-	publishDir "${params.outdir}/trees", pattern: "*.tree"
+	publishDir "${params.outdir}/trees", pattern: "*.tree", mode: 'copy'
 	input:
 	tuple val(id), val(stx), val(contig), val(loc), path(alignment)
 
@@ -87,7 +87,7 @@ process CLOSESTLEAF {
 
 process CHECKMOTIF {
 	tag "checking motif of ${id} Stx${stx} encoded at ${contig} ${loc}"
-	publishDir "${params.outdir}/motifs", pattern: "*_motif.txt"
+	publishDir "${params.outdir}/motifs", pattern: "*_motif.txt", mode: 'copy'
 	input:
 	tuple val(id), val(stx), val(contig), val(loc), path(alignment)
 
@@ -103,7 +103,7 @@ process CHECKMOTIF {
 process STXTYPER {
 	tag "running stxtyper on ${query.baseName}"
 	label "multithread"
-	publishDir "${params.outdir}/stxtyper", pattern: "*_stxtyper.tsv"
+	publishDir "${params.outdir}/stxtyper", pattern: "*_stxtyper.tsv", mode: 'copy'
 	input:
 	path query
 
@@ -120,7 +120,7 @@ process STXTYPER {
 process KMA {
 	tag "running KMA on ${pair_id}"
 	label "multithread"
-	publishDir "${params.outdir}/kma", pattern: "*.res"	
+	publishDir "${params.outdir}/kma", pattern: "*.res", mode: 'copy'
 	input:
 	tuple val(pair_id), path(reads)
 
@@ -184,7 +184,7 @@ process REPORT {
 process MAKETSV {
     label "pandas"
     tag "making summary row for ${id}"
-
+    publishDir "${params.outdir}/report", pattern: "*_row.tsv", mode: 'copy'
     input:
     tuple val(id), path(kma), path(stxtyper), val(stx), val(contig), val(loc), path(closestleaf), path(motif), val(samplename), val(coverage) 
 
